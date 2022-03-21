@@ -1,0 +1,87 @@
+---
+title: "analyses"
+author: "Juan S Vargas"
+date: "2/16/2022"
+output: html_document
+bibliography: biblio.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r packages}
+library(magrittr)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(tidyr)
+```
+
+## Data extraction
+
+We used the Timelapse software (Greenberg) to extract the metadata associated with the videos. This software allows to correct errors in time set, and differences in the timezone with flexibility. There were indeed a few errors, mostly associated with the timezone, which was not the same across cameras. Additionally there were one hour changes due to daylight savings, I'm not sure if this error came up only because of <i>my</i> computer's locale. In any case, I was able to fix these problems. The main database is in a csv file called "cavity_monitoring_database.csv".
+The database csv below includes only the records that were not errors, videos of nothing, or setup videos. It does include multiple videos for a single event, but there is a variable called "Event" that includes the number of videos in each episode, so I can select just one out of each series to keep only independent events.
+
+```{r import data}
+(database <- read_csv('cavity_monitoring_database.csv',
+                     col_types = cols_only(Station=col_factor(),Species=col_factor(),
+                                           DateTime=col_datetime(),Event=col_character(),
+                                           Individual=col_character())))
+```
+
+Now I need to add the information about the stations. First I import the data associated with the stations.
+
+```{r stn_data}
+station_data <- read.csv('camtrap_effort.csv')
+station_data$installed <- strptime(station_data$installed, format = "%d/%m/%Y")
+station_data$takedown <- strptime(station_data$takedown, format = "%d/%m/%Y")
+station_data$end <- strptime(station_data$end, format = "%d/%m/%Y")
+station_data$work_time <- as.integer(floor(station_data$end-station_data$installed))
+station_data
+```
+
+And I merge this information with the records.
+```{r merge}
+db_joint <- left_join(database,station_data) %>% mutate(class=factor(class, levels = c('Forest','Natural regeneration','Low Balsa','Medium Balsa','High Balsa')),
+                                                        plot=factor(plot),Station=factor(Station))
+```
+Let's first get the count of independent events.
+```{r frequency}
+db_joint %>% filter(startsWith(Event,"1|")) %>% group_by(Species) %>% count() %>% arrange(desc(n))
+```
+We see that coatis were the species detected most often, followed by common opossums. We can look at this by the different categories, and using the frequency as a more standard metric.
+```{r}
+db_joint %>% filter(startsWith(Event,"1|")) %>% group_by(class,Species) %>% add_count() %>% 
+  mutate(freq=n/work_time) %>% 
+  select(Species,class,freq) %>% 
+  distinct() %>% 
+  summarise(meanfreq=mean(freq,na.rm=T)) %>% arrange(desc(meanfreq),.by_group = T) %>% 
+  pivot_wider(names_from = class, values_from = meanfreq,names_sort = TRUE)
+```
+We see that in the forest there are 
+
+Plot the frequency
+```{r}
+db_joint %>% group_by(Station,Species) %>% count() %>% left_join(station_data) %>% 
+  select(Station,Species,n,work_time,class) %>% mutate(freq=n/work_time) %>% ungroup() %>% 
+  group_by(Species,class) %>% 
+  summarise(mean_freq=mean(freq),var_freq=var(freq))
+```
+Here is the list of species detected
+Let's see the frequency by treatment
+```{r}
+cat(levels(db_joint$Species))
+```
+In this list, some categories include multiple species. For example, the raccoon category groups the common raccoon <i>Procyon lotor</i> and the crab-eating raccoon <i>P. cancrivorus</i>. The bats category possibly also includes multiple species. Some common species found in the restoration plots include frugivores in the subfamily Stenodermatinae, and nectarivores (<i>Glossophaga soricina</i>) [@Haave2021]. Similarly, the rodents category includes field mice (Cricetidae), spiny rats ().
+
+Now we focus on the number of detections.
+```{r}
+db_joint %>% group_by(Species) %>% count() %>% arrange(desc(n))
+```
+We see there are a lot of coatis (<i>Nasua narica</i>), followed by common opossums (<i>Didelphis marsupialis</i>). This, however, is not necessarily an indicator of activity, as there are multiple records for a given event. I will trim the data to include only independent events. I will use a five minute independence threshold. 
+```{r indep events}
+db_indep_5 <- db_joint %>% group_by(Station, Species) %>% arrange(Station, Species, DateTime) %>% mutate(tdif=lead(DateTime)-DateTime, newevent=tdif>5*60|is.na(tdif)) %>% filter(newevent==TRUE)
+db_indep_2 <- db_joint %>% group_by(Station, Species) %>% arrange(Station, Species, DateTime) %>% mutate(tdif=lead(DateTime)-DateTime, newevent=tdif>2*60|is.na(tdif)) %>% filter(newevent==TRUE)
+```
+
+
