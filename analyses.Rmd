@@ -1,18 +1,18 @@
 ---
-title: "analyses"
+title: "OC cavity project analyses"
 author: "Juan S Vargas"
 date: "2/16/2022"
 output: html_document
 bibliography: biblio.bib
-df_print: "tibble"
+df_print: "kable"
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+Load libraries. We will use the `tidyverse` suite for data management, as well as the `vegan` package for community ecology analyses. 
 ```{r packages}
 library(tidyverse)
-library(ggplot2)
 library(vegan)
 ```
 
@@ -22,13 +22,11 @@ We used the Timelapse software (Greenberg) to extract the metadata associated wi
 The database csv below includes only the records that were not errors, videos of nothing, or setup videos. It does include multiple videos for a single event, but there is a variable called "Event" that includes the number of videos in each episode, so I can select just one out of each series to keep only independent events.
 
 ```{r import data}
-(database <- read_csv('cavity_monitoring_database.csv',
-                     col_types = cols_only(Station=col_factor(),Species=col_factor(),
-                                           DateTime=col_datetime(),Event=col_character(),
-                                           Individual=col_character())))
+(database <- read_csv('cavity_monitoring_database.csv') %>% filter(DeleteFlag==FALSE) %>% 
+   select(DateTime, Station, Species, SpNumber, Individual, Event, Behaviour))
 ```
 
-Now I need to add the information about the stations. First I import the data associated with the stations.
+Now I need to add the information about the stations. 
 
 ```{r stn_data}
 station_data <- read.csv('camtrap_effort.csv')
@@ -37,23 +35,30 @@ station_data$takedown <- strptime(station_data$takedown, format = "%d/%m/%Y")
 station_data$end <- strptime(station_data$end, format = "%d/%m/%Y")
 station_data$work_time <- as.integer(floor(station_data$end-station_data$installed))
 head(station_data)
-```
-
-And I merge this information with the records.
-```{r merge}
 db_joint <- left_join(database,station_data) %>% mutate(class=factor(class, levels = c('Forest','Natural regeneration','Low Balsa','Medium Balsa','High Balsa')),
                                                         plot=factor(plot),Station=factor(Station))
 ```
 # Species diversity
-
+Let's look at the list of species, and remove the one we're not interested in.
 ```{r}
-sp_to_remove <- c('uid','bird','lizard_uid','people')
-db_indep <- db_joint %>% filter(startsWith(Event,"1|"),
-                    !Species%in%sp_to_remove) 
+table(db_joint$Species)
+sp_to_remove <- c('uid','bird','lizard_uid','people','bat','scorpion', 'opossum_uid', 'setup', 'dog')
+db_filtered <- db_joint %>% filter(!Species%in%sp_to_remove) 
+```
+Now I add a column to indicate the event number. This will allow to group into independent events.
+```{r}
+db_filtered <- db_filtered %>% separate(col = Event, into = c("Event","event_total")) %>% 
+  mutate(event = cumsum(Event=='1'))
+db_indep <- db_filtered %>% distinct(event, .keep_all = T)
+```
+Plot the number of species detected.
+``` {r}
 db_indep %>% select(class, Station, Species) %>% distinct() %>% 
   group_by(Station) %>% add_count() %>% ungroup() %>% 
   select(class,n) %>% distinct() %>% 
-  ggplot(aes(class,n))+geom_boxplot()
+  ggplot(aes(class,n))+geom_boxplot(fill='steelblue')+
+  theme_classic(base_size = 16)+
+  labs(x='Site category',y='Number of species detected')
 ```
 
 There was a higher mean number of species detected at forest cavities, but also a larger variation, likely due to the diversity in the nature of the cavities (some were hollow trees, others were fallen logs). In contrast, the number of species detected in reforestation plots was similar across stations.
@@ -61,11 +66,12 @@ We can also calculate diversity indices, like Shannon's index.
 
 Let's get the count of independent events.
 ```{r spp count}
-db_indep %>% group_by(Species) %>% count() %>% arrange(desc(n))
+db_indep %>% group_by(Species) %>% count() %>% arrange(desc(n)) %>% print()
 ```
 
-In this list, some categories include multiple species. For example, the raccoon category groups the common raccoon <i>Procyon lotor</i> and the crab-eating raccoon <i>P. cancrivorus</i>. Similarly, the rodents category includes field mice (Cricetidae), spiny rats (). The bats category possibly also includes multiple species. Species found inside the boxes include frugivore (<i>Carollia perspicillata</i>) and nectarivore phyllostomids (<i>Micronycteris spp.</i>). Other common species found in the restoration plots include frugivores in the subfamily Stenodermatinae and nectarivores (<i>Glossophaga soricina</i>) [@Haave2021], but these tend to roost more often in leaves. 
+In this list, some categories include multiple species. For example, the raccoon category groups the common raccoon <i>Procyon lotor</i> and the crab-eating raccoon <i>P. cancrivorus</i>. Similarly, the rodents category includes field mice (Cricetidae), spiny rats (Echimyidae). The bats category (excluded here) possibly also includes multiple species. Species found inside the boxes include frugivore (<i>Carollia perspicillata</i>) and nectarivore phyllostomids (<i>Micronycteris spp.</i>). Other common species found in the restoration plots include frugivores in the subfamily Stenodermatinae and nectarivores (<i>Glossophaga soricina</i>) [@Haave2021], but these tend to roost more often in leaves, so it's less likely that they are the ones seen in videos. 
 Coatis (<i>Nasua narica</i>) were the species detected most often, followed by common opossums (<i>Didelphis marsupialis</i>). In contrast, we detected white-lipped peccaries (<i>Tayassu pecari</i>), pumas (<i>Puma concolor</i>) and margays (<i>Leopardus wiedii</i>) fewer than five times over the study period. We detected two species of primates, capuchin monkeys (<i>Cebus capucinus</i>) and squirrel monkeys (<i>Saimiri oerstedii</i>), even though the the natural cavities and artificial habitats were close to the ground.
+In addition to the species richness, we can use diversity indices to assess the similarity among plots.
 
 ```{r diversity index}
 community_matrix <- db_indep %>% group_by(Station, Species) %>% count() %>% 
@@ -73,42 +79,30 @@ community_matrix <- db_indep %>% group_by(Station, Species) %>% count() %>%
 diversity(community_matrix) -> div_index
 data.frame(div_index) %>% rownames_to_column('Station') %>% left_join(station_data) %>% 
   select(Station, div_index, class) %>% 
-  ggplot(aes(class, div_index))+geom_boxplot()
+  ggplot(aes(class, div_index))+geom_boxplot(fill='steelblue')+
+  theme_classic(base_size = 14)+
+  labs(x='Site category',y='Species diversity (Shannon index)')
 ```
 
-The diversity was higher in the forest, and in plots with an intermediate amount of Balsa trees. The remaining reforestation plots had similar diversity. 
-
-```{r nmds}
-db_indep %>% group_by(Station,Species) %>% count() %>% 
-  pivot_wider(names_from = Species, values_from = n, values_fill = 0) %>% 
-  column_to_rownames('Station') %>% 
-  vegan::metaMDS() -> nmds_spp
-nmds_spp$points %>% rownames() %>% as.data.frame() %>% left_join(station_data, by=c(.='Station')) %>% pull(class)->site_type
-
-ordiplot(nmds_spp, type = 't')
-ordiellipse(nmds_spp, groups = site_type)
-```
-
-The NMDS shows a clear separation of the community in forest plots (F) from the community in reforestation plots. In reforestation plots there is not a clear distinction. Species like the skunk, puma, agouti were clearly associated with forest sites, whereas others like collared peccaries, monkeys, opossums, raccoons and coatis were more strongly associated with reforestation plots. 
-This analysis is non-metric, we can take a closer look at these trends by analyzing the frequency of detection.
-
-# Frequency of detection
-
-We can analyze the number further by looking at the different categories, and using the frequency per station as a more standard metric than the count alone.
+The diversity was higher in the forest, and in plots with an intermediate amount of Balsa trees. The remaining reforestation plots had similar diversity. The natural regeneration plots may have lower diversity.
+We can analyze which species are represented in each category, using the frequency per station as a standard metric.
 ```{r freq}
 db_indep %>% group_by(class,Species) %>% add_count() %>% 
   mutate(freq=n/work_time) %>% 
   select(Species,class,freq) %>% 
   distinct() %>% 
-  summarise(meanfreq=mean(freq,na.rm=T)) %>% arrange(desc(meanfreq),.by_group = T) %>% 
-  pivot_wider(names_from = class, values_from = meanfreq,names_sort = TRUE)
+  summarise(meanfreq=mean(freq,na.rm=T)) %>% 
+  ggplot(aes(class, Species))+geom_tile(aes(fill = meanfreq*7))+
+  scale_fill_continuous(trans='log10')+
+  theme_classic()+
+  labs(fill = 'Detection frequency (per week)')+
+  theme(axis.text.x = element_text(angle = -35, hjust = 0))
 ```
+
 Coatis, tamanduas (<i>Tamandua mexicana</i>), ocelots (<i>Leopardus pardalis</i>), common opossums, collared peccaries (<i>Pecari tajacu</i>) and four-eyed opossums (<i>Philander opossum</i>) were detected across all categories.
 There are several species which were only detected in the forest, like striped skunks (<i>Conepatus semistriatus</i>), nine-banded armadillos (<i>Dasypus novemcinctus</i>), squirrels (Sciuridae), pumas (<i>Puma concolor</i>) and white-lipped peccaries.
-In contrast, pumas, raccoons (<i>Procyon spp.</i>), tapirs (<i>Tapirus bairdii</i>) and both species of monkey were only detected in the regeneration plots. In the case of the monkeys this likely has to do with the sparsity of trees, which forces them to move closer to the ground. Some species that were detected across all categories had higher detection frequencies at stations with lower coverage, like common opossums. We observed an opposite trend, whereby species were more often seen in the forest of in areas with higher coverage for tamanduas. 
-For multiple other species there was no clear trend.
-
-Let's look to see if there is any clear trend of frequencies. I will include only species that were detected across more than 2 categories.
+In contrast, raccoons (<i>Procyon spp.</i>), tapirs (<i>Tapirus bairdii</i>) and both species of monkey were only detected in the regeneration plots. In the case of the monkeys this likely has to do with the sparsity of trees, which forces them to move closer to the ground (although these species do forage often at forest edges). Some species that were detected across all categories had higher detection frequencies at stations with lower coverage, like common opossums. We observed an opposite trend, whereby species were more often seen in the forest of in areas with higher coverage for tamanduas. 
+For multiple other species there was no clear trend. In the figures below I include only species that were detected across more than 2 categories.
 ```{r freq v cat plot}
 sp_to_plot <- db_indep %>% group_by(Species,class) %>% count() %>% ungroup() %>% group_by(Species) %>% count() %>% filter(n>=3) %>% pull(Species)
 db_indep %>% filter(Species%in%sp_to_plot) %>% 
@@ -116,14 +110,44 @@ db_indep %>% filter(Species%in%sp_to_plot) %>%
   mutate(freq=n/work_time) %>% 
   select(Species,class,freq) %>% 
   distinct() %>% 
-  ggplot(aes(class,freq))+geom_boxplot()+
+  ggplot(aes(class,freq*7))+geom_boxplot()+
   scale_y_log10()+
   facet_wrap(~Species)+
+  labs(x='Site category',y='Detection frequency (per week)')+
+  theme_classic()+
   theme(axis.text.x = element_text(angle = -45,hjust = 0))
 ```
 
 The only species for which there would seem to be a trend are pacas (<i>Cuniculus paca</i>). They were detected most frequently in forest plots, and then decreased with higher balsa coverage. Four-eyed opossums had the highest detection frequency in natural regeneration plots, and decreased with increasing balsa coverage.
 There's some outliers in the data, like the frequency of coatis in low balsa plots. 
+
+
+## Ordination
+We can visualize the conformation of the community at each site.
+```{r nmds}
+nmds_spp <- db_indep %>% group_by(Station,Species) %>% count() %>% 
+  pivot_wider(names_from = Species, values_from = n, values_fill = 0) %>% 
+  column_to_rownames('Station') %>% 
+  metaMDS()
+nmds_spp$points %>% rownames() %>% as.data.frame() %>% left_join(station_data, by=c(.='Station')) %>% pull(class)->site_type
+
+ordiplot(nmds_spp, type = 't')
+ordiellipse(nmds_spp, groups = site_type)
+```
+
+The NMDS shows a clear separation of the community in forest plots (F) from the community in reforestation plots. In reforestation plots there is not a clear distinction. Species like the skunk, puma, agouti were clearly associated with forest sites, whereas others like collared peccaries, monkeys, opossums, raccoons and coatis were more strongly associated with reforestation plots. 
+```{r nmds 3 cat}
+nmds_spp$points %>% rownames() %>% as.data.frame() %>% left_join(station_data, by=c(.='Station')) %>%
+  transmute(class2=if_else(grepl('Balsa', class), 'Reforestation',class)) %>% 
+  pull(class2)->site_type_2
+
+ordiplot(nmds_spp, type = 't')
+ordiellipse(nmds_spp, groups = site_type_2)
+```
+
+This analysis is non-metric, we can take a closer look at these trends by analyzing the frequency of detection.
+
+
 
 ## Vegetation data
 The previous plots were ordered assuming that the amount of coverage increased from natural regeneration to higher balsa. We can use the information we have about vegetation to see if the abundance/detection frequency are actually better described by vegetation variables.
@@ -136,7 +160,6 @@ I'll add the station code to select the plots used in our study.
 ```{r join codes veg data}
 veg_joint <- station_data %>% select(Station,class,plot) %>% left_join(veg_data, by =  c('plot'='Site')) 
 veg_joint %>% filter(!is.na(plot))
-  
 ```
 Some of these variables will naturally be correlated. We can check this with a Principal Component Analysis.
 ```{r PCA}
@@ -144,7 +167,6 @@ cca_env <- veg_joint %>% filter(!is.na(plot),Station!='M_1') %>% #I'm removing M
   arrange(Station) %>% 
   select(`lealit (%)`:last_col())
 veg_pca <- prcomp(cca_env)
-prin_comps <- predict(veg_pca)[,1:2]
 biplot(veg_pca)
 ```
 
@@ -154,19 +176,19 @@ We can select only these four variables to determine their relationship with the
 ```{r veg correlation}
 cca_spp <-  db_indep %>% filter(class!='Forest',Station!='M_1') %>% 
   group_by(Station,Species) %>% count() %>% pivot_wider(names_from = Species,values_from = n,values_fill = 0) %>% arrange(Station) %>% ungroup() %>% select(!Station)
-library(vegan)
 veg_cca <- cca(cca_spp~`grass (%)`+`cancov (%)`+`lealit (%)`+`veg (%)`, data = cca_env)
 plot(veg_cca, display = c('bp','sp'))
 ```
 
 Alternatively, we can use the first two principal components. We name the first PC total vegetation, and the second one proportion of forest.
-```{r}
+```{r cca}
 prin_comps <- predict(veg_pca)[,1:2] %>% as.data.frame()
 names(prin_comps) <- c('total_veg','prop_forest')
 plot(cca(cca_spp~total_veg+prop_forest, data=prin_comps), display = c('bp','sp'))
 ```
 
 We see that the number of bat detections in restoration plots was postitively correlated with canopy cover and leaf litter (PC1). Other species like tayra, capuchin monkeys were negatively correlated with the proportion of forest, meaning they are associated with more open spaces. Most remaining species were near the middle of the plot, meaning they are not responding to these variables significantly. 
+Excluding bats from the analyses, we can see some clearer trends. Margays, for example were positively associated with more vegetation and forest cover. Tayras, in contrast, were more associated with lower forest coverage. Species like tamanduas, opossums, and coatis were not strongly associated with either variable.  
 
 # Behavior
 We need to consider which species are in fact interacting with the cavities or artificial habitats. Some analysis that we will include:
@@ -174,5 +196,10 @@ We need to consider which species are in fact interacting with the cavities or a
 - Average residency for different species, in terms of time spent each visit.
 - Number of individuals
 - Delays after a different species used it as refuge.
+First, we need to categorize each individual event, whether it constitutes an interaction or not.
+```{r}
+db_indep %>% group_by(event)  %>% transmute(behavior=str_split(Behaviour, ',')) 
+```
+
 
 # References
