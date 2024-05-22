@@ -257,13 +257,23 @@ db_behav %>% group_by(Species, cavity_type) %>% summarise(n_events=n(),
 Coatis, common opossums and ocelots interact frequently with cavities, both natural cavities and artificial habitats. In both cases they regularly inspect and go into the cavities. Coatis entered the cavities roughly 60% of all detections, ocelots between 62% and 72%, and common opossums between 16% and 38%.
 Some species are unable to enter the artificial habitats, even though they interact with them, for example peccaries, agoutis and pacas. Pacas and agoutis had almost no interaction with artificial habitats, while peccaries occasionally inspect the artificial habitats. We also observed collared peccaries using artificial habitats to shelter from the rain. Agoutis do go into natural cavities regularly (38% of detections).
 Tamanduas and tayras only entered natural cavities. They were detected in the reforestation plots but never interacted with the artificial habitats.
+
 ```{r visit duration}
 db_behav %>% filter(entrance) %>% 
   group_by(Species, cavity_type) %>% summarise(mean_dur = mean(event_dur)/60, se =sd(event_dur)/60/sqrt(n())) %>% 
   pivot_wider(names_from = cavity_type, values_from = c(mean_dur,se)) %>% 
   knitr::kable(digits = 1, caption = 'Mean time spent at cavities and artificial habitats')
 ```
+
+
+
 Coatis and common opossums spend longer at natural cavities on average, likely because there are more food items in natural cavities, and it takes longer to explore the cavity. Coatis on average spent more than five times longer, while opossums spent more than double the time. Ocelots in contrast spent twice as much inside artificial habitats than in natural cavities (I need to refine this analysis, as the data currently might consider entrances and exits as separate events). 
+
+```{r duration analysis}
+durmm <- db_behav %>% filter(entrance, event_dur>0) %>% mutate(dur = as.numeric(event_dur)) %>% glmer(dur~cavity_type+(1|Species), data = ., family = gaussian(link="log")) 
+summary(durmm)
+```
+
 ```{r}
 db_behav %>% filter(eat) %>% count(Species, cavity_type) %>% 
   arrange(desc(n)) %>% 
@@ -312,16 +322,32 @@ There were ten species that interacted with bat boxes where there were and weren
 ```{r binomial entrance model}
 binmod <- db_behav %>% filter(entrance | interaction) %>% left_join(bat_stations) %>%
   glm(entrance~Species+cavity_type+bats_present, family = 'binomial', data = .)
+# glmm version, species as random effect
+binmodmm <- db_behav %>% filter(entrance | interaction) %>% left_join(bat_stations) %>% glmer(entrance~cavity_type+bats_present+(1|Species), family = 'binomial', data = .)
+
 summary(binmod)
+summary(binmodmm)
 ```
 This model indicates that the presence of bats did not have an effect on the likelihood of animals entering the cavities. The type of cavity, however, did affect the likelihood. Animals were `r cat(round(exp(1.2402), digits=2))` times more likely to enter natural than artificial cavities ($z=2.22, p=0.027$). 
+
 # GLM detection frequency
-We can analyze the detection frequency, the number of detections per week/month should follow a Poisson distribution. I can divide the data in different weeks.
+We can analyze the detection frequency, the number of detections per week/month should follow a Poisson distribution. 
+
 ```{r}
 db_behav %>% left_join(select(station_data, Station, installed), by='Station') %>% 
   group_by(Station) %>% mutate(week = as.integer(lubridate::date(event_start)-installed)%/%30) %>% 
   group_by(Station, Species, week) %>% count() %>% 
   ggplot()+geom_histogram(aes(n))+facet_wrap(~Species)
+```
+
+```{r}
+freqmm <- db_behav %>% left_join(select(station_data, Station, installed), by='Station') %>% 
+  group_by(Station) %>% mutate(week = as.integer(lubridate::date(event_start)-installed)%/%30) %>% 
+  group_by(Station, Species, week) %>% count() %>% left_join(station_data) %>% glmer(n~cavity_type+(1|Species), family = "poisson", data = .)
+summary(freqmm)
+```
+```{r}
+dotplot(ranef(freqmm))
 ```
 
 
