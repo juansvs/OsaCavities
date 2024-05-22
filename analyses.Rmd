@@ -10,11 +10,12 @@ df_print: "kable"
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, message = FALSE)
 ```
-Load libraries. We will use the `tidyverse` suite for data management, as well as the `vegan` package for community ecology analyses [@vegan]. 
+Load libraries. We will use the `tidyverse` suite for data management, as well as the `vegan` package for community ecology analyses, and `lme4` for mixed models. 
 ```{r packages}
 library(tidyverse)
 library(vegan)
 library(cowplot)
+library(lme4)
 ```
 
 # Summary
