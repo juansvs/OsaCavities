@@ -150,7 +150,7 @@ rect(xleft = 0, ybottom = 0:20-0.4, xright = -7*baseR_freq_data2$freq_Natural, y
 rect(xleft = 0, ybottom = 0:20-0.4, xright = -7*baseR_freq_data2$ifreq_Natural, ytop = (0:20)+0.4, col = '#60a479')
 
 #### time of interaction ####
-db_behav %>% filter(entrance | interaction | eat | mark, Species %in% c("coati", "peccary_collared", "agouti", "rodent", "ocelot", "opossum_common")) %>% # filter to keep interactions
+db_behav %>% filter(entrance , Species %in% c("coati", "agouti", "ocelot", "opossum_common")) %>% # filter to keep interactions
   mutate(Species = factor(Species, levels = baseR_freq_data2$Species, labels = baseR_freq_data2$Common)) %>% 
   group_by(Species, cavity_type) %>% summarise(meandur = mean(event_dur), se = sd(event_dur)/sqrt(n())) %>% # get mean and st. err.
   ggplot(aes(y = Species))+ # forest plot
@@ -159,13 +159,16 @@ db_behav %>% filter(entrance | interaction | eat | mark, Species %in% c("coati",
   scale_color_manual(values = c('#d8cb39','#3b674b'))+
   labs(x = 'Interaction duration (s)', 
        color = 'Cavity type')
-#plot with panels, for six species that interact with both
-db_behav %>% filter(entrance | interaction | eat | mark, Species %in% c("coati", "peccary_collared", "agouti", "rodent", "ocelot", "opossum_common")) %>% # filter to keep interactions
+#plot with panels, for four species that enter both
+db_behav %>% filter(entrance , Species %in% c("coati", "ocelot", "opossum_common")) %>% # filter to keep interactions
   mutate(Species = factor(Species, levels = baseR_freq_data2$Species, labels = baseR_freq_data2$Common)) %>% 
-  ggplot(aes(cavity_type, event_dur, fill = cavity_type))+ # forest plot
+  ggplot(aes(cavity_type, as.numeric(event_dur)/60, fill = cavity_type))+ # forest plot
   geom_boxplot(show.legend = F)+
   facet_wrap(~Species, scales = 'free_y')+
   theme_classic(base_size = 16)+
-  "theme(strip.background = element_blank())+"
+  theme(strip.background = element_blank())+
+  # scale_y_log10()+
   scale_fill_manual(values = c('#d8cb39','#3b674b'))+
-  labs(y = 'Interaction duration (s)', x='Cavity type')
+  labs(y = 'Interaction duration (min)', x='Cavity type')
+
+
