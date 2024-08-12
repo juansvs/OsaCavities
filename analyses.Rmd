@@ -186,9 +186,9 @@ nmds_spp <- metaMDS(community_matrix)
 
 ordiplot(nmds_spp, type = 'none', las = 1)
 ordiellipse(nmds_spp, groups = community_matrix_sites$class2, draw = 'polygon', border = FALSE, col = c('forestgreen','gold','firebrick'), alpha = 0.4)
-points(nmds_spp, display = 'sites', select = site_type_2=='Forest', col = 'forestgreen', pch = 16)
-points(nmds_spp, display = 'sites', select = site_type_2=='Reforestation', col = 'gold', pch = 16)
-points(nmds_spp, display = 'sites', select = site_type_2=='Natural regeneration', col = 'firebrick', pch = 16)
+points(nmds_spp, display = 'sites', select = community_matrix_sites$class2=='Forest', col = 'forestgreen', pch = 16)
+points(nmds_spp, display = 'sites', select = community_matrix_sites$class2=='Reforestation', col = 'gold', pch = 16)
+points(nmds_spp, display = 'sites', select = community_matrix_sites$class2=='Natural regeneration', col = 'firebrick', pch = 16)
 text(nmds_spp, display = 'species', cex = 0.7)
 ```
 
@@ -239,6 +239,7 @@ plot(cca(cca_spp~PC1+PC2, data=prin_comps), display = c('bp','sp'))
 Species like tayra, capuchins, and tapirs are oriented along the first PC, they are associated with higher grass cover. Rodents and agoutis are associated with the second PC, they are therefore associated more with higher leaf litter and canopy cover. Raccoons, ocelots and squirrel monkeys are negatively associated with the second PC, meaning they are associated with areas with fewer trees. Most remaining species were near the middle of the plot, meaning they are not responding to these variables significantly. 
 
 # Types of uses of cavities
+
 We need to consider which species are in fact interacting with the cavities or artificial habitats. Some analysis that we will include:
 * Which species use cavities as refuge, which only to forage
 * Average time spent each visit.
@@ -258,6 +259,8 @@ db_behav %>% group_by(Species, cavity_type) %>% summarise(n_events=n(),
 Coatis, common opossums and ocelots interact frequently with cavities, both natural cavities and artificial habitats. In both cases they regularly inspect and go into the cavities. Coatis entered the cavities roughly 60% of all detections, ocelots between 62% and 72%, and common opossums between 16% and 38%.
 Some species are unable to enter the artificial habitats, even though they interact with them, for example peccaries, agoutis and pacas. Pacas and agoutis had almost no interaction with artificial habitats, while peccaries occasionally inspect the artificial habitats. We also observed collared peccaries using artificial habitats to shelter from the rain. Agoutis do go into natural cavities regularly (38% of detections).
 Tamanduas and tayras only entered natural cavities. They were detected in the reforestation plots but never interacted with the artificial habitats.
+
+## Visit duration
 
 ```{r visit duration}
 db_behav %>% filter(entrance) %>% 
